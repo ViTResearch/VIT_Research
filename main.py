@@ -435,14 +435,15 @@ class VitRGTS(nn.Module):
         out = self.linear_head(x)
         return out, attn_maps
     
-    def get_patch_embeddings(self, img):
+    def get_cls_and_patch_embeddings(self, img):
         """
-        이미지에서 CLS 토큰 및 레지스터 토큰을 제외한 순수 패치 임베딩 추출.
+        이미지에서 CLS 토큰 및 패치 임베딩을 추출.
 
         Args:
             img (torch.Tensor): [Batch, Channels, Height, Width] 크기의 입력 이미지
 
         Returns:
+            cls_embedding (torch.Tensor): [Batch, Dim] 크기의 CLS 토큰 임베딩
             patch_embeddings (torch.Tensor): [Batch, Patches, Dim] 크기의 패치 임베딩
         """
         batch, device = img.shape[0], img.device
@@ -451,7 +452,15 @@ class VitRGTS(nn.Module):
         x = self.to_patch_embedding(img)  # 패치 임베딩 계산
         x += self.pos_embedding.to(device)  # 위치 임베딩 추가
 
-        # CLS 토큰 및 레지스터 토큰 제외 (CLS 토큰은 to_patch_embedding에서 생성되지 않으므로 추가 작업 불필요)
-        return x  # 순수 패치 임베딩 반환
+        # CLS 토큰 추가
+        cls_tokens = self.cls_token.expand(batch, -1, -1)
+        x = torch.cat((cls_tokens, x), dim=1)  # CLS 토큰을 패치 임베딩 앞에 추가
 
+        # Transformer 통과
+        x, _ = self.transformer(x)  # Transformer 결과 반환 (CLS + 패치 토큰)
+
+        # CLS 토큰과 패치 토큰 분리
+        cls_embedding = x[:, 0]  # 첫 번째 토큰이 CLS 토큰
+        patch_embeddings = x[:, 1:]  # 나머지가 패치 토큰
+        return cls_embedding, patch_embeddings
 
